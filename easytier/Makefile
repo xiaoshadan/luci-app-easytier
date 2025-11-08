@@ -53,7 +53,7 @@ define Package/$(PKG_NAME)/config
 		bool "Include Web Console (easytier-web)"
 		depends on PACKAGE_$(PKG_NAME)
 		depends on !@(mips||mipsel)
-		default y
+		default n
 		help
 		  Install the easytier-web web console.
 endef
