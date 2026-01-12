@@ -1,7 +1,6 @@
 name: Build-OpenWrt-EasyTier
 
 on:
-  #push:
   workflow_dispatch:
     inputs:
       tag:
@@ -12,55 +11,41 @@ on:
         description: '请填写发布的说明'
         required: false
         default: ''
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 env:
   TAG: "${{ github.event.inputs.tag }}"
   TZ: Asia/Shanghai
+
 permissions:
   contents: write
+
 jobs:
   build:
-    name: Build ${{ matrix.arch }}-${{ matrix.sdk }}
+    name: Build ${{ matrix.arch }}-${{ matrix.sdk }}-${{ matrix.version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         arch:
-          - aarch64_cortex-a53
-          - aarch64_cortex-a72
-          - aarch64_generic
-          - arm_arm1176jzf-s_vfp
-          - arm_arm926ej-s
-          - arm_cortex-a15_neon-vfpv4
-          - arm_cortex-a5_vfpv4
-          - arm_cortex-a7
-          - arm_cortex-a7_neon-vfpv4
-          - arm_cortex-a8_vfpv3
-          - arm_cortex-a9
-          - arm_cortex-a9_neon
-          - arm_cortex-a9_vfpv3-d16
-          - arm_fa526
-          #- arm_mpcore
-          - arm_xscale
-          - mips_24kc
-          #- mips_4kec
-          - mips_mips32
-          - mipsel_24kc
-          - mipsel_24kc_24kf
-          - mipsel_74kc
-          - mipsel_mips32
           - x86_64
-          
+          - aarch64_cortex-a53
+          - arm_cortex-a7_neon-vfpv4
         sdk:
-          - 22.03.7
+          - 23.05.5
           - SNAPSHOT
+        version:
+          - full
+          - lite
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Cache OpenWrt SDK
         uses: actions/cache@v4
         with:
@@ -68,21 +53,23 @@ jobs:
             /opt/openwrt-sdk-${{ matrix.arch }}-${{ matrix.sdk }}
             dl
           key: sdk-${{ matrix.arch }}-${{ matrix.sdk }}
-          
-      - name: Overwrite i18n file
+
+      - name: Configure Package (Lite vs Full)
         run: |
-          cat > luci-app-easytier/root/etc/uci-defaults/luci-i18n-easytier-zh-cn << 'EOF'
-          #!/bin/sh
-          exit 0
-          EOF
-          
+          if [ "${{ matrix.version }}" = "lite" ]; then
+            # 修改 Makefile 默认值以防万一，关闭 Web 控制台
+            sed -i 's/default y/default n/g' easytier/Makefile
+          else
+            # 开启 Web 控制台
+            sed -i 's/default n/default y/g' easytier/Makefile
+          fi
+
       - name: Building packages
         uses: openwrt/gh-action-sdk@main
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}
           FEEDNAME: packages_ci
           PACKAGES: easytier luci-app-easytier
-          #NO_DEFAULT_FEEDS: 1
           NO_REFRESH_CHECK: 1
           NO_SHFMT_CHECK: 1
           MAKEFLAGS: -j$(nproc)
@@ -91,47 +78,49 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.arch }}-${{ matrix.sdk }}
-          path: bin/packages/${{ matrix.arch }}/packages_ci/*
+          name: EasyTier-${{ matrix.arch }}-${{ matrix.sdk }}-${{ matrix.version }}
+          path: bin/packages/${{ matrix.arch }}/packages_ci/
 
   release:
     name: Publish Release
     runs-on: ubuntu-latest
     needs: build
     if: ${{ github.event.inputs.tag != '' }}
-
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Prepare release info
+      - name: Prepare release files
         run: |
           sudo timedatectl set-timezone "Asia/Shanghai"
           mkdir -p release
-          for dir in artifacts/*; do
-            name=$(basename "$dir")
-            zip -j "release/EasyTier-${{ env.TAG }}-${name}.zip" "$dir"/*
+          cd artifacts
+          for dir in *; do
+            # 如果目录为空则跳过
+            if [ -z "$(ls -A "$dir")" ]; then continue; fi
+            zip -j "../release/${dir}-${{ env.TAG }}.zip" "$dir"/*
           done
-          echo "build_time=$(TZ=UTC-8 date '+%Y年%m月%d日%H:%M:%S' | jq -sRr @uri)" >> $GITHUB_ENV
+          echo "build_time=$(date '+%Y年%m月%d日%H:%M:%S')" >> $GITHUB_ENV
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-            token: ${{ secrets.GITHUB_TOKEN }}
-            body: |
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ### 🛠 编译信息
+            - **编译时间**: ${{ env.build_time }}
+            - **版本说明**: ${{ github.event.inputs.text }}
 
-             > ### ![](https://img.shields.io/badge/%E7%BC%96%E8%AF%91%E6%97%B6%E9%97%B4-${{ env.build_time }}-easytier?logo=github&labelColor=%E9%A1%BB)![](https://img.shields.io/github/downloads/${{ github.repository }}/${{ env.TAG }}/total?label=%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0&logo=github)
+            ### 📦 版本区别
+            - **Full 版**: 包含 EasyTier Web 控制台，功能完整，但体积较大。
+            - **Lite 版**: 不含 Web 控制台，仅包含核心 VPN 功能，适合 Flash 空间小的设备。
 
-             - 其中 **`22.03.7`** 里面是ipk安装包 **`SNAPSHOT`** 里面是apk安装包
+            ### 💾 安装指南
+            - **23.05.x**: 下载对应架构的 zip，解压后使用 `opkg install *.ipk` 安装。
+            - **SNAPSHOT**: 使用 `apk add --allow-untrusted *.apk` 安装。
 
-             - **`*.apk` 是OpenWrt新版的APK包** 对于apk包跳过证书命令
-             `apk add --allow-untrusted luci-app-easytier.apk`
-
-             ${{ github.event.inputs.text }}
-           
-            tag_name: ${{ env.TAG }}
-            files: release/*.zip
- 
-
+            > 注意：`easytier` 程序本身不包含在 ipk 中，请在插件界面手动上传或通过软件包安装。
+          tag_name: ${{ env.TAG }}
+          files: release/*.zip

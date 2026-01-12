@@ -1,70 +1,47 @@
 # luci-app-easytier
 
-依赖`kmod-tun`需要先在系统软件包里安装好
-### 快速开始
+本项目为 [EasyTier/luci-app-easytier](https://github.com/EasyTier/luci-app-easytier) 的 Fork 分支，已同步最新代码并优化了自动化构建流程。
 
-1. 右上角Fork克隆本项目
-2. 修改 `.github/workflows/build.yml`，在 `jobs.build.strategy` 修改 arch 和 sdk
-  - 建议 arch 只保留需要的选项，加速编译
-  - sdk 可根据需要填写，其中`SNAPSHOT`后缀的是apk安装包，`openwrt-22.03`的是ipk安装包（也可以根据自己的路由 OpenWRT 版本修改）
-3. 到 actions 手动触发自动编译流程，注意需要填写 release，否则只编译不发布，参考下图：
- <img width="2727" height="866" alt="image" src="https://github.com/user-attachments/assets/24a55d1c-7937-4cef-87f8-cd8778b5f009" />
+依赖 `kmod-tun` 需要先在系统软件包里安装好。
 
-### 安装方法
+### 🚀 快速开始 (GitHub Actions)
+
+1. 右上角 **Fork** 克隆本项目。
+2. 到 **Actions** 页面，选择 `Build-OpenWrt-EasyTier`。
+3. 点击 **Run workflow** 手动触发：
+   - **tag**: 填写版本号（如 `v2.5.0`），留空则不发布 Release。
+   - **text**: 填写发布说明。
+4. 编译完成后，在 **Releases** 页面下载对应架构的压缩包。
+
+### 📦 版本说明
+
+为了适配不同存储空间的设备，本项目同时提供两个版本：
+- **Full 版**: 包含 `easytier-web` 控制台，功能最全，推荐 Flash 空间大于 32MB 的设备使用。
+- **Lite 版**: 移除了 Web 控制台，仅保留 VPN 核心功能，适合 Flash 空间小的设备。
+
+### 📥 安装方法
+
+将下载的包上传到 OpenWrt 的 `/tmp` 目录。
+
+#### OpenWrt 23.05 及旧版 (ipk)
 ```bash
-#先上传到openwrt的/tmp/tmp目录里安装
-opkg install /tmp/tmp/luci-app-easytier_all.ipk
-
-#卸载
-opkg remove luci-app-easytier
-
-#更新版本需要先卸载再安装新的ipk然后去管理界面关闭插件 修改参数后重新点击应用并保存
-#安装后openwrt管理界面里不显示easytier 请注销登录或关闭窗口重新打开  
+opkg install /tmp/luci-app-easytier_*.ipk
 ```
 
+#### OpenWrt SNAPSHOT / 新版 (apk)
 ```bash
-#如果是新版openwrt使用的是apk包管理器 出现无法安装apk的可以尝试使用忽略证书验证
-apk add --allow-untrusted /tmp/tmp/luci-app-easytier.apk
+apk add --allow-untrusted /tmp/luci-app-easytier_*.apk
 ```
 
-此luci-app-easytier不包含二进制程序，需要自行在openwrt管理界面里的easytier插件界面里上传二进制程序
+> **注意**：本插件不包含 `easytier-core` 二进制程序。安装后请在 LuCI 界面上传程序，或通过 `opkg install easytier` 安装官方二进制。
 
-### 编译方法
+### 🔄 同步上游
+
+如果你想让你的 Fork 保持最新，建议执行以下命令：
 ```bash
-#下载openwrt编译sdk到opt目录（不区分架构）
-wget -qO /opt/sdk.tar.xz https://downloads.openwrt.org/releases/22.03.5/targets/rockchip/armv8/openwrt-sdk-22.03.5-rockchip-armv8_gcc-11.2.0_musl.Linux-x86_64.tar.xz
-tar -xJf /opt/sdk.tar.xz -C /opt
-
-cd /opt/openwrt-sdk*/package
-#克隆luci-app-easytier到sdk的package目录里
-git clone https://github.com/EasyTier/luci-app-easytier.git /opt/luci-app-easytier
-cp -R /opt/luci-app-easytier/luci-app-easytier .
-
-cd /opt/openwrt-sdk*
-#升级脚本创建模板
-./scripts/feeds update -a
-make defconfig
-
-#开始编译
-make package/luci-app-easytier/compile V=s -j1
-
-#编译完成后在/opt/openwrt-sdk*/bin/packages/aarch64_generic/base目录里
-cd /opt/openwrt-sdk*/bin/packages/aarch64_generic/base
-#移动到/opt目录里
-mv *.ipk /opt/luci-app-easytier_all.ipk
+git remote add upstream https://github.com/EasyTier/luci-app-easytier.git
+git fetch upstream
+git reset --hard upstream/main
+git push origin main --force
 ```
-
-> 如果在 状态-系统日志里 出现下图日志内容可以使用以下命令解决
-
-```
-Fri Feb  7 11:13:30 2025 daemon.err uhttpd[3381]: luci.util.pcdata() has been replaced by luci.xml.pcdata() - Please update your code.
-Fri Feb  7 11:13:30 2025 daemon.err uhttpd[3381]: luci.util.pcdata() has been replaced by luci.xml.pcdata() - Please update your code.
-Fri Feb  7 11:13:30 2025 daemon.err uhttpd[3381]: luci.util.pcdata() has been replaced by luci.xml.pcdata() - Please update your code.
-Fri Feb  7 11:13:30 2025 daemon.err uhttpd[3381]: luci.util.pcdata() has been replaced by luci.xml.pcdata() - Please update your code.
-Fri Feb  7 11:13:30 2025 daemon.err uhttpd[3381]: luci.util.pcdata() has been replaced by luci.xml.pcdata() - Please update your code.
-```
-
-```
-sed -i 's/util.pcdata/xml.pcdata/g' /usr/lib/lua/luci/model/cbi/easytier.lua
-```
-
+*(注意：这会覆盖你的本地修改。建议在同步后重新配置你的 build.yml)*
