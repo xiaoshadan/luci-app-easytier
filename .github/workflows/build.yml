@@ -31,12 +31,9 @@ jobs:
       fail-fast: false
       matrix:
         arch:
-          - x86_64
           - aarch64_cortex-a53
-          - arm_cortex-a7_neon-vfpv4
         sdk:
           - 23.05.5
-          - SNAPSHOT
         version:
           - full
           - lite
@@ -57,7 +54,7 @@ jobs:
       - name: Configure Package (Lite vs Full)
         run: |
           if [ "${{ matrix.version }}" = "lite" ]; then
-            # 修改 Makefile 默认值以防万一，关闭 Web 控制台
+            # 修改 Makefile 默认值，关闭 Web 控制台以节省空间
             sed -i 's/default y/default n/g' easytier/Makefile
           else
             # 开启 Web 控制台
@@ -98,7 +95,6 @@ jobs:
           mkdir -p release
           cd artifacts
           for dir in *; do
-            # 如果目录为空则跳过
             if [ -z "$(ls -A "$dir")" ]; then continue; fi
             zip -j "../release/${dir}-${{ env.TAG }}.zip" "$dir"/*
           done
@@ -110,17 +106,19 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             ### 🛠 编译信息
+            - **设备架构**: aarch64_cortex-a53
+            - **SDK 版本**: 23.05.5 (ipk)
             - **编译时间**: ${{ env.build_time }}
             - **版本说明**: ${{ github.event.inputs.text }}
 
             ### 📦 版本区别
-            - **Full 版**: 包含 EasyTier Web 控制台，功能完整，但体积较大。
-            - **Lite 版**: 不含 Web 控制台，仅包含核心 VPN 功能，适合 Flash 空间小的设备。
+            - **Full 版**: 包含 EasyTier Web 控制台，功能完整，适合空间充裕的设备。
+            - **Lite 版**: 移除了 Web 控制台，仅保留 VPN 核心功能，专门解决 Flash 空间不足无法安装的问题。
 
             ### 💾 安装指南
-            - **23.05.x**: 下载对应架构的 zip，解压后使用 `opkg install *.ipk` 安装。
-            - **SNAPSHOT**: 使用 `apk add --allow-untrusted *.apk` 安装。
+            1. 下载对应版本的 zip 并解压。
+            2. 使用 `opkg install *.ipk` 进行安装。
 
-            > 注意：`easytier` 程序本身不包含在 ipk 中，请在插件界面手动上传或通过软件包安装。
+            > 注意：本插件不包含 `easytier-core` 二进制程序。安装后请在 LuCI 界面上传程序，或通过 `opkg install easytier` 安装官方二进制。
           tag_name: ${{ env.TAG }}
           files: release/*.zip
